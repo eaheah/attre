@@ -51,7 +51,7 @@ class Aligner:
         # for center in (self.left_center, self.right_center):
         #     cv2.circle(rgb_image, center, 5, color=(0,0,255), thickness=-1)
         # original_image = self.bound(rgb_image, box_args)
-
+        print()
         gray_image = cv2.cvtColor(aligned_image, cv2.COLOR_BGR2GRAY)
 
         boxes = self.face_detector(gray_image, 1)
