@@ -1,9 +1,11 @@
+#TRAINING!!!
+
 import numpy as np
 import cv2
 import dlib
 import os
 import pandas as pd
-
+from matplotlib import pyplot as plt
 def resize(image, new_width, is_square=False, interpolation=cv2.INTER_AREA):
     if is_square:
         return cv2.resize(image, (new_width, new_width), interpolation=interpolation)
@@ -13,10 +15,11 @@ def resize(image, new_width, is_square=False, interpolation=cv2.INTER_AREA):
         return cv2.resize(image, (new_width, new_height))
 
 class Aligner:
-    def __init__(self, output_path, predictor_path, df, save=False):
+    def __init__(self, output_path, predictor_path, df, save=False, padding=None):
         self.df = df
         self.save = save
         self.output_path = output_path
+        self.padding = padding
         self.predictor = dlib.shape_predictor(predictor_path)
         self.output_left_eye = (0.35, 0.35)
         # self.output_width = 256
@@ -51,7 +54,7 @@ class Aligner:
 
         gray_image = cv2.cvtColor(aligned_image, cv2.COLOR_BGR2GRAY)
 
-        boxes = face_detector(gray_image, 1)
+        boxes = self.face_detector(gray_image, 1)
 
         if boxes:
             if not len(boxes) == 1:
@@ -61,17 +64,25 @@ class Aligner:
 
             box_args = self.get_bbox(box)
             try:
-                aligned_image = self.bound(aligned_image, box_args)
+                if self.padding is None:
+                    aligned_image = self.bound(aligned_image, box_args)
+                else:
+                    faces = dlib.full_object_detections()
+                    for detection in boxes:
+                        faces.append(self.predictor(aligned_image, detection))
+                    aligned_image = dlib.get_face_chip(aligned_image, faces[0], self.bbox_shape, self.padding)
                 cv2.imwrite(filename, aligned_image)
-            except:
-                pass
+                
+            except Exception as e:
+                print(e)
+                # raise 
 
-            # plt.figure(figsize=(15,15))
-            # plt.subplot(121)
-            # plt.imshow(original_image)
-            # plt.subplot(122)
-            # plt.imshow(aligned_image)
-            # plt.savefig(filename)
+#             plt.figure(figsize=(15,15))
+#             plt.subplot(121)
+#             plt.imshow(original_image)
+#             plt.subplot(122)
+#             plt.imshow(aligned_image)
+#             plt.savefig(filename)
         else:
             pass
 
@@ -156,50 +167,54 @@ class Aligner:
         return box         
 
     def generate(self, path, face_detector):
+        self.face_detector = face_detector
         for image_path in os.listdir(path):
             print(image_path)
             image = cv2.imread(os.path.join(path, image_path))
             # image = resize(image, new_width=800)
-            row = self.df.loc[df['image_id'] == image_path]
+            row = self.df.loc[self.df['image_id'] == image_path]
 
             self.output_width, self.output_height = image.shape[:2]
             
             gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-            boxes = face_detector(gray_image, 1)# number of times image is upsampled (more means more faces, but may not need much here)
+            boxes = face_detector(gray_image, 1)
 
             if boxes:
                 if not len(boxes) == 1:
                     box = self.get_largest_bbox(boxes)
                 else:
                     box = boxes[0]              
-                yield face_aligner.align(image, gray_image, box, image_path, row) 
+                yield self.align(image, gray_image, box, image_path, row) 
             else:
                 yield None
 
     def single_image(self, path, image_path, face_detector):
+        self.face_detector = face_detector
         image = cv2.imread(os.path.join(path, image_path))
         # image = resize(image, new_width=800)
         self.output_width, self.output_height = image.shape[:2]  
-        row = self.df.loc[df['image_id'] == image_path]      
+        row = self.df.loc[self.df['image_id'] == image_path]      
         gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-        boxes = face_detector(gray_image, 1)# number of times image is upsampled (more means more faces, but may not need much here)
+        boxes = face_detector(gray_image, 1)
 
         if boxes:
             if not len(boxes) == 1:
                 box = self.get_largest_bbox(boxes)
             else:
                 box = boxes[0]              
-            return face_aligner.align(image, gray_image, box, image_path, row) 
+            return self.align(image, gray_image, box, image_path, row) 
         else:
             return None
 if __name__ == '__main__':
     landmarks_path = '/vagrant/imgs/list_landmarks_align_celeba.csv'
     df = pd.read_csv(landmarks_path)
 
+    # NO PADDING on output
+    print("no padding")
     face_aligner = Aligner(
-        output_path='/vagrant/src/training_data/aligned/',
+        output_path='/vagrant/imgs/training_data2/nopadding/',
         predictor_path='/vagrant/src/shape_predictor_68_face_landmarks.dat',
         df=df,
         save=True)
@@ -214,7 +229,131 @@ if __name__ == '__main__':
             pass
     except:
         print("\a")
+        print("no padding")
+
+        raise
+    print("\a")
+    
+    # .1 PADDING on output
+    print(".1 padding")
+
+    face_aligner = Aligner(
+        output_path='/vagrant/imgs/training_data2/padding1/',
+        predictor_path='/vagrant/src/shape_predictor_68_face_landmarks.dat',
+        df=df,
+        save=True,
+        padding=.1)
+    face_detector = dlib.get_frontal_face_detector()
+
+    generator = face_aligner.generate('/vagrant/imgs/orig_images/img_align_celeba/', face_detector)
+
+    import time
+    # s = time.time()
+    try:
+        for _ in generator:
+            pass
+    except:
+        print("\a")
+        print(".1 padding")
+        raise
+    print("\a")
+    
+    # .2 PADDING on output
+    print(".2 padding")
+    face_aligner = Aligner(
+        output_path='/vagrant/imgs/training_data2/padding2/',
+        predictor_path='/vagrant/src/shape_predictor_68_face_landmarks.dat',
+        df=df,
+        save=True,
+        padding=.2)
+    face_detector = dlib.get_frontal_face_detector()
+
+    generator = face_aligner.generate('/vagrant/imgs/orig_images/img_align_celeba/', face_detector)
+
+    import time
+    # s = time.time()
+    try:
+        for _ in generator:
+            pass
+    except:
+        print("\a")
+        print(".2 padding")
+
         raise
     print("\a")
 
-    # face_aligner.single_image('/vagrant/imgs/orig_images/img_align_celeba/', '202379.jpg', face_detector)
+    # .3 PADDING on output
+    print(".3 padding")
+
+    face_aligner = Aligner(
+        output_path='/vagrant/imgs/training_data2/padding3/',
+        predictor_path='/vagrant/src/shape_predictor_68_face_landmarks.dat',
+        df=df,
+        save=True,
+        padding=.3)
+    face_detector = dlib.get_frontal_face_detector()
+
+    generator = face_aligner.generate('/vagrant/imgs/orig_images/img_align_celeba/', face_detector)
+
+    import time
+    # s = time.time()
+    try:
+        for _ in generator:
+            pass
+    except:
+        print("\a")
+        print(".3 padding")
+
+        raise
+    print("\a")
+    
+    # .4 PADDING on output
+    print(".4 padding")
+
+    face_aligner = Aligner(
+        output_path='/vagrant/imgs/training_data2/padding4/',
+        predictor_path='/vagrant/src/shape_predictor_68_face_landmarks.dat',
+        df=df,
+        save=True,
+        padding=.4)
+    face_detector = dlib.get_frontal_face_detector()
+
+    generator = face_aligner.generate('/vagrant/imgs/orig_images/img_align_celeba/', face_detector)
+
+    import time
+    # s = time.time()
+    try:
+        for _ in generator:
+            pass
+    except:
+        print("\a")
+        print(".4 padding")
+
+        raise
+    print("\a")
+    
+    # .5 PADDING on output
+    print(".5 padding")
+
+    face_aligner = Aligner(
+        output_path='/vagrant/imgs/training_data2/padding5/',
+        predictor_path='/vagrant/src/shape_predictor_68_face_landmarks.dat',
+        df=df,
+        save=True,
+        padding=.5)
+    face_detector = dlib.get_frontal_face_detector()
+
+    generator = face_aligner.generate('/vagrant/imgs/orig_images/img_align_celeba/', face_detector)
+
+    import time
+    # s = time.time()
+    try:
+        for _ in generator:
+            pass
+    except:
+        print("\a")
+        print(".5 padding")
+
+        raise
+    print("\a")
+#     face_aligner.single_image('/vagrant/imgs/orig_images/img_align_celeba/', '202379.jpg', face_detector)
